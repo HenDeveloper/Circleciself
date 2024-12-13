@@ -1,0 +1,62 @@
+version: 2.1
+
+executors:
+  self-hosted-windows-executor:
+    machine:
+      image: windows-server-2022  # Disesuaikan dengan setup runner Anda
+    resource_class: hencoders/official  # Sesuaikan dengan resource class runner Anda
+
+jobs:
+  setup-windows:
+    executor: self-hosted-windows-executor
+    steps:
+      - checkout
+      - run:
+          name: Buat atau Ubah Password Akun HenCoders
+          command: |
+            if (net user HenCoders) {
+              net user HenCoders HenDev123#
+            } else {
+              net user HenCoders HenDev123# /add
+              net localgroup Administrators HenCoders /add
+            }
+            net user HenCoders /active:yes
+            WMIC USERACCOUNT WHERE "Name='HenCoders'" SET PasswordExpires=FALSE
+
+      - run:
+          name: Install Tailscale
+          command: |
+            Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale-setup.exe"
+            Start-Process -Wait -FilePath "tailscale-setup.exe" -ArgumentList "/quiet"
+            $env:PATH += ";C:\Program Files\Tailscale"
+            tailscale up --authkey $env:TAILSCALE_AUTH_KEY
+
+      - run:
+          name: Aktifkan Akses RDP
+          command: |
+            Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
+            netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
+
+      - run:
+          name: Verifikasi Layanan Remote Desktop
+          command: |
+            Get-Service -Name TermService
+            Start-Service -Name TermService
+
+      - run:
+          name: Tampilkan Informasi Akses
+          command: |
+            $tailscale_ip = tailscale ip
+            Write-Host "==============================="
+            Write-Host "Informasi Akses:"
+            Write-Host "IP RDP     : $tailscale_ip"
+            Write-Host "Username   : HenCoders"
+            Write-Host "Password   : HenDev123#"
+            Write-Host "==============================="
+            Write-Host "Proses selesai. Anda dapat menggunakan RDP sekarang."
+
+workflows:
+  version: 2
+  windows-tailscale-workflow:
+    jobs:
+      - setup-windows
